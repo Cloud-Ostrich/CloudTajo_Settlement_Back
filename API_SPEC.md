@@ -39,14 +39,13 @@
 ```
 
 모든 인증 필요 API는 Bearer 토큰을 검증한다. `password_hash` 또는 `passwordHash`는 어떤 API 응답에도 포함하지 않는다.
+영수증 원본 이미지는 Object Storage에 비공개로 저장하며, 저장 키 prefix는 `receipts/{year}/{month}/`를 사용한다. 파일 접근 API는 영수증 소유자 또는 `ADMIN`인지 확인한 뒤 파일을 제공한다.
 
 ## 2. 상태 값과 권한
 
 | 상태 | 의미 |
 |---|---|
 | `SUBMITTED` | 사용자가 영수증을 제출한 상태 |
-| `OCR_PENDING` | OCR 요청 대기 또는 처리 중 |
-| `OCR_DONE` | OCR 추출값이 저장된 상태 |
 | `REVIEWING` | 관리자가 검토 중인 상태 |
 | `APPROVED` | 관리자가 승인한 상태 |
 | `REJECTED` | 관리자가 반려한 상태 |
@@ -55,10 +54,19 @@
 허용 상태 전이:
 
 ```text
-SUBMITTED -> OCR_PENDING -> OCR_DONE -> REVIEWING
+SUBMITTED -> REVIEWING
 REVIEWING -> APPROVED -> SETTLED
 REVIEWING -> REJECTED -> SUBMITTED  (재제출)
 ```
+
+OCR 상태는 영수증 상태와 분리해 `ocr_results.status`에 저장한다.
+
+```text
+OCR_PENDING -> OCR_DONE
+            -> OCR_FAILED
+```
+
+OCR 실패 시 `receipts.status`는 `SUBMITTED`로 유지한다. 재요청은 기존 `ocr_results`를 수정하거나 삭제하지 않고 새 `OCR_PENDING` 결과를 생성한다.
 
 - `USER`는 로그인, 내 정보 조회, 활성 카테고리 조회, 영수증 제출, 본인 영수증 목록·상세·이력 조회, 반려 건 재제출을 수행한다.
 - `ADMIN`은 OCR 재요청·수정, 관리자 목록 조회, 승인, 반려, 정산, 중복 후보 조회, 대시보드 조회를 수행한다.
@@ -152,9 +160,19 @@ Content-Type: `multipart/form-data`
 1. Object Storage에 파일을 저장하고 `receipt_files`에 메타데이터를 저장한다.
 2. `receipts`를 `SUBMITTED`로 생성한다.
 3. `receipt_histories`에 `SUBMIT`을 기록한다.
-4. OCR 요청을 시작하면 `OCR_PENDING`으로 변경하고 이력을 기록한다.
+4. `ocr_results`에 새 행을 생성하고 `status`를 `OCR_PENDING`으로 저장한다.
+5. OCR 성공 시 해당 결과를 `OCR_DONE`으로 변경하고, OCR 원본값을 저장한 뒤 `receipts.status`를 `REVIEWING`으로 변경한다.
+6. OCR 실패 시 해당 결과를 `OCR_FAILED`로 변경하고 `receipts.status`는 `SUBMITTED`로 유지한다.
 
-성공 `data`는 최소한 `receiptId`, `status`를 포함한다.
+성공 `data`는 최소한 `receiptId`, `status`, `ocrStatus`를 포함한다. 제출 직후 응답 예시는 다음과 같다.
+
+```json
+{
+  "receiptId": 1,
+  "status": "SUBMITTED",
+  "ocrStatus": "OCR_PENDING"
+}
+```
 
 ### REC-002 내 영수증 목록
 
@@ -210,6 +228,7 @@ Content-Type: `multipart/form-data`
   },
   "ocrResult": {
     "id": 3,
+    "status": "OCR_DONE",
     "provider": "CLOVA_OCR",
     "merchantNameRaw": "정상 상호",
     "paidAtRaw": "2026-10-05",
@@ -222,13 +241,13 @@ Content-Type: `multipart/form-data`
 
 OCR 원본 필드는 `ocr_results`에서, 관리자 확정 필드는 `receipts`에서 읽는다.
 
-## 6. 관리자·OCR API
-
-### OCR-001 OCR 재요청
+### REC-004 OCR 재요청
 
 `POST /api/receipts/{receiptId}/ocr/retry`
 
-`ADMIN`만 호출할 수 있다. 기존 `ocr_results`를 덮어쓰지 않고 새 OCR 결과를 저장한다. 실패 시 `OCR_FAILED`를 반환할 수 있다.
+`ADMIN`만 호출할 수 있다. 기존 `ocr_results`를 덮어쓰지 않고 새 `OCR_PENDING` 결과를 저장한다. OCR 성공 시 새 결과를 `OCR_DONE`으로 저장하고, 실패 시 `OCR_FAILED`로 저장한다. OCR 실패 시 영수증 상태는 `SUBMITTED`로 유지한다.
+
+## 6. 관리자 API
 
 ### ADM-001 관리자 영수증 목록
 
@@ -359,7 +378,7 @@ Request body:
 
 - 총 지출 금액: `receipts.status IN ('APPROVED', 'SETTLED')`인 `amount` 합계.
 - 카테고리별 지출: `category_id`별 금액 합계와 건수.
-- 미처리 건: `SUBMITTED`, `OCR_PENDING`, `OCR_DONE`, `REVIEWING` 상태 건수.
+- 미처리 건: `receipts.status IN ('SUBMITTED', 'REVIEWING')` 상태 건수. OCR 대기·실패 건은 `ocr_results.status`를 별도로 집계한다.
 - 반려 건: `REJECTED` 상태 건수 및 `receipt_histories.reason` 분석.
 - 평균 검토 시간: `submitted_at`부터 승인·반려 시각(`reviewed_at`)까지의 평균.
 

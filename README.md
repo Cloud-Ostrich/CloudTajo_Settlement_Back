@@ -57,3 +57,26 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 pytest
 ```
+
+## DB 연결 확인
+
+프로젝트 루트의 `.env`에 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`를 설정합니다.
+애플리케이션은 SQLAlchemy와 PyMySQL을 사용하고, `.env`를 자동으로 읽어 MySQL 연결을 구성합니다.
+
+```bash
+python -c 'from app.common.database import check_database_connection; check_database_connection(); print("DB connection ok")'
+```
+
+DB 연결이 되지 않으면 Cloud DB의 접근 제어, VPC·Subnet 경로, 포트 `3306`, 계정 권한을 확인해야 합니다.
+
+## 임시 로그인 테스트 계정
+
+회원가입 API가 구현되기 전까지 로그인 테스트에 사용할 수 있는 개발용 계정입니다.
+
+```text
+이메일: test@example.com
+비밀번호: test1234!
+역할: USER
+```
+
+이 계정은 현재 인메모리 저장소에만 존재하며, 실제 `users` 테이블 연결 후에는 DB 시드 데이터로 이전해야 합니다.

@@ -68,6 +68,8 @@ receipts 1 ── N duplicate_candidates  (duplicate_candidates.candidate_receip
 
 `duplicate_candidates`는 하나의 원본 영수증(`receipt_id`)과 다른 후보 영수증(`candidate_receipt_id`)을 연결하는 자기참조 관계다.
 
+로그아웃을 지원하기 위해 access token의 고유 `jti`를 애플리케이션 메모리의 폐기 목록에 저장한다. access token은 학습 목적상 만료되지 않지만, 인증 시 서명 검증과 폐기 목록 검사를 모두 수행한다. 서버 재시작 시 메모리 목록은 초기화된다.
+
 ## 3. 테이블 명세
 
 ### 3.1 `users`
@@ -268,9 +270,8 @@ OCR 재요청 시 새 `ocr_results` 행을 `OCR_PENDING` 상태로 생성하고 
 
 1. OCR 요청 시 생성한 `ocr_results` 행에 OCR 원본 응답과 추출값, 파싱 정보를 저장한다.
 2. 이전 OCR 요청의 결과는 덮어쓰지 않는다. 재요청은 새 행으로 생성한다.
-3. OCR 성공 시 해당 행의 `status`를 `OCR_DONE`으로 변경하고 이력을 저장한다. 실패 시 `OCR_FAILED`로 변경하고 `error_message` 및 이력을 저장한다. OCR 처리 결과만으로 `receipts.status`를 변경하지 않는다.
-4. 관리자가 검토를 시작하면 `receipts.status`를 `REVIEWING`으로 변경하고 이력을 저장한다.
-5. 관리자가 확정한 값을 `receipts.merchant_name`, `paid_at`, `amount`에 저장한다.
+3. OCR 성공 시 해당 행의 `status`를 `OCR_DONE`으로 변경하고 이력을 저장한다. 성공한 경우 `receipts.status`를 `REVIEWING`으로 변경하며, 실패 시 `OCR_FAILED`로 변경하고 `error_message` 및 이력을 저장한다.
+4. 관리자가 확정한 값을 `receipts.merchant_name`, `paid_at`, `amount`에 저장한다.
 
 ### 승인, 반려, 정산
 

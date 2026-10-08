@@ -4,7 +4,7 @@ from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app.main import app, items
-from app.Auth.security import hash_password
+from app.Auth.security import clear_revoked_jtis, hash_password
 from app.common.database import Base, get_db
 from app.common.models import Category, User
 
@@ -31,6 +31,7 @@ client = TestClient(app)
 
 
 def setup_function() -> None:
+    clear_revoked_jtis()
     items.clear()
     with TestingSessionLocal.begin() as db:
         db.execute(delete(User))
@@ -186,6 +187,22 @@ def test_user_001_requires_bearer_token() -> None:
         "message": "로그인이 필요합니다.",
         "errorCode": "AUTH_REQUIRED",
     }
+
+
+def test_auth_002_logout_revokes_access_token() -> None:
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "member@example.com", "password": "password1234"},
+    )
+    access_token = login_response.json()["data"]["accessToken"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    logout_response = client.post("/api/auth/logout", headers=headers)
+
+    assert logout_response.status_code == 200
+    assert logout_response.json()["success"] is True
+    assert client.get("/api/users/me", headers=headers).status_code == 401
+
 
 
 def test_cat_001_returns_active_categories_only() -> None:

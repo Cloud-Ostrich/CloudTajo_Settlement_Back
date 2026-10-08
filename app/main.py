@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.Auth.router import router as auth_router
 from app.Cat.router import router as category_router
 from app.User.router import router as user_router
+from app.Receipt.router import router as receipt_router
 
 
 app = FastAPI(
@@ -22,6 +23,7 @@ app = FastAPI(
         {"name": "사용자", "description": "현재 로그인한 사용자 정보 API"},
         {"name": "카테고리", "description": "활성 지출 카테고리 조회 API"},
         {"name": "샘플 항목", "description": "초기 개발 환경 확인용 샘플 API"},
+        {"name": "영수증", "description": "영수증 제출·OCR·검토·정산 API"},
     ],
 )
 
@@ -108,3 +110,4 @@ def get_item(item_id: int) -> Item:
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(category_router)
+app.include_router(receipt_router)

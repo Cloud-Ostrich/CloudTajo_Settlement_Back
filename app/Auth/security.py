@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import time
+import uuid
 from typing import Any
 
 from dotenv import load_dotenv
@@ -15,6 +16,19 @@ load_dotenv()
 
 TOKEN_SECRET = os.getenv("AUTH_TOKEN_SECRET", "local-development-only-secret").encode()
 PASSWORD_ITERATIONS = 310_000
+revoked_jtis: set[str] = set()
+
+
+def revoke_jti(jti: str) -> None:
+    revoked_jtis.add(jti)
+
+
+def is_jti_revoked(jti: str) -> bool:
+    return jti in revoked_jtis
+
+
+def clear_revoked_jtis() -> None:
+    revoked_jtis.clear()
 
 
 def hash_password(password: str) -> str:
@@ -51,7 +65,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 def issue_access_token(user_id: int, role: str) -> str:
-    payload = {"sub": user_id, "role": role, "iat": int(time.time())}
+    payload = {"sub": user_id, "role": role, "iat": int(time.time()), "jti": uuid.uuid4().hex}
     encoded_payload = base64.urlsafe_b64encode(
         json.dumps(payload, separators=(",", ":")).encode("utf-8")
     ).rstrip(b"=")

@@ -79,11 +79,13 @@ OCR 실패 시 `receipts.status`는 `SUBMITTED`로 유지한다. 재요청은 �
 | ID | Method | Endpoint | 기능 | 권한 | 요청 |
 |---|---|---|---|---|---|
 | `AUTH-001` | POST | `/api/auth/login` | 로그인 | 공통 | JSON body |
+| `AUTH-002` | POST | `/api/auth/logout` | 로그아웃 및 access token 폐기 | 인증 사용자 | Bearer token |
 | `USER-001` | GET | `/api/users/me` | 내 정보와 권한 조회 | 공통 | 없음 |
 | `CAT-001` | GET | `/api/categories` | 활성 카테고리 목록 조회 | 공통 | 없음 |
 | `REC-001` | POST | `/api/receipts` | 영수증 제출 및 OCR 요청 | `USER` | multipart form |
 | `REC-002` | GET | `/api/receipts/my` | 내 영수증 목록 조회 | `USER` | Query |
 | `REC-003` | GET | `/api/receipts/{receiptId}` | 영수증 상세 조회 | 소유자 또는 `ADMIN` | Path |
+| `REC-004` | POST | `/api/receipts/{receiptId}/resubmit` | 반려 영수증 재제출 | 소유자 `USER` | multipart form |
 | `OCR-001` | POST | `/api/receipts/{receiptId}/ocr/retry` | OCR 재요청 | `ADMIN` | Path |
 | `ADM-001` | GET | `/api/admin/receipts` | 관리자 영수증 목록 조회 | `ADMIN` | Query |
 | `ADM-002` | PATCH | `/api/admin/receipts/{receiptId}/ocr` | OCR 추출값 수정 및 확정 | `ADMIN` | JSON body |
@@ -108,6 +110,12 @@ Request body:
   "password": "password1234"
 }
 ```
+
+### AUTH-002 로그아웃
+
+`POST /api/auth/logout`
+
+Bearer token의 `jti`를 애플리케이션 메모리의 폐기 목록에 저장한다. 이후 같은 token을 사용한 인증 요청은 `AUTH_REQUIRED`로 거부한다. 서버 재시작 시 폐기 목록은 초기화된다. 응답의 `data`는 `null`이다.
 
 성공 `data`에는 인증에 필요한 access token과 사용자 식별·권한 정보를 포함할 수 있다. `password_hash`는 포함하지 않는다.
 
@@ -164,7 +172,7 @@ Content-Type: `multipart/form-data`
 5. OCR 성공 시 해당 결과를 `OCR_DONE`으로 변경하고, OCR 원본값을 저장한 뒤 `receipts.status`를 `REVIEWING`으로 변경한다.
 6. OCR 실패 시 해당 결과를 `OCR_FAILED`로 변경하고 `receipts.status`는 `SUBMITTED`로 유지한다.
 
-성공 `data`는 최소한 `receiptId`, `status`, `ocrStatus`를 포함한다. 제출 직후 응답 예시는 다음과 같다.
+제출 API는 OCR 완료를 기다리지 않고 즉시 반환한다. 성공 `data`는 최소한 `receiptId`, `status`, `ocrStatus`를 포함한다. 제출 직후 응답 예시는 다음과 같다.
 
 ```json
 {
@@ -206,7 +214,7 @@ Content-Type: `multipart/form-data`
 
 `GET /api/receipts/{receiptId}`
 
-소유자 또는 `ADMIN`만 조회할 수 있다. 상세 `data`에는 영수증 기본 정보와 파일·OCR 결과를 포함할 수 있다.
+소유자 또는 `ADMIN`만 조회할 수 있다. 상세 `data`에는 영수증 기본 정보와 파일·OCR 결과를 포함할 수 있다. 파일은 `objectKey`를 직접 노출하지 않고 권한 확인 후 발급한 presigned URL을 `file.url`로 반환한다.
 
 ```json
 {
@@ -221,10 +229,10 @@ Content-Type: `multipart/form-data`
   "memo": "회의 후 결제",
   "file": {
     "id": 7,
-    "objectKey": "receipts/2026/10/7.jpg",
     "originalFilename": "receipt.jpg",
     "contentType": "image/jpeg",
-    "fileSize": 183920
+    "fileSize": 183920,
+    "url": "https://..."
   },
   "ocrResult": {
     "id": 3,
@@ -241,17 +249,35 @@ Content-Type: `multipart/form-data`
 
 OCR 원본 필드는 `ocr_results`에서, 관리자 확정 필드는 `receipts`에서 읽는다.
 
-### REC-004 OCR 재요청
+### REC-004 반려 영수증 재제출
+
+`POST /api/receipts/{receiptId}/resubmit`
+
+`REJECTED` 상태인 본인 영수증만 호출할 수 있다. 기존 이력은 보존하고 파일 메타데이터는 새 이미지로 갱신하며, 새 `OCR_PENDING` 결과를 생성한다.
+
+### OCR-001 OCR 재요청
 
 `POST /api/receipts/{receiptId}/ocr/retry`
 
-`ADMIN`만 호출할 수 있다. 기존 `ocr_results`를 덮어쓰지 않고 새 `OCR_PENDING` 결과를 저장한다. OCR 성공 시 새 결과를 `OCR_DONE`으로 저장하고, 실패 시 `OCR_FAILED`로 저장한다. OCR 실패 시 영수증 상태는 `SUBMITTED`로 유지한다.
+`ADMIN`만 호출할 수 있다. 기존 `ocr_results`를 덮어쓰지 않고 새 `OCR_PENDING` 결과를 저장한다. OCR 성공 시 새 결과를 `OCR_DONE`으로 저장하고 영수증 상태를 `REVIEWING`으로 변경한다. 실패 시 `OCR_FAILED`로 저장하고 영수증 상태는 `SUBMITTED`로 유지한다.
 
 ## 6. 관리자 API
 
 ### ADM-001 관리자 영수증 목록
 
 `GET /api/admin/receipts?status=REVIEWING&categoryId=1&from=2026-10-01&to=2026-10-31`
+
+모든 목록 API의 성공 응답은 다음 형식으로 통일한다.
+
+```json
+{
+  "items": [],
+  "page": 0,
+  "size": 20,
+  "totalElements": 0,
+  "totalPages": 0
+}
+```
 
 | Query | 타입 | 필수 | 설명 |
 |---|---|---:|---|
@@ -392,6 +418,7 @@ Request body:
 | `OCR_FAILED` | CLOVA OCR 호출 또는 분석 실패 |
 | `INVALID_STATUS_TRANSITION` | 허용되지 않는 상태 변경 |
 | `FILE_UPLOAD_FAILED` | Object Storage 이미지 저장 실패 |
+| `INVALID_REQUEST` | 요청 값이 올바르지 않음 |
 
 HTTP 상태 코드와 관계없이 응답 body의 `success`와 `errorCode`를 일관되게 제공한다. 인증 실패·권한 부족·리소스 없음·상태 충돌의 HTTP 상태 코드는 백엔드 구현 규칙에서 확정한다.
 
@@ -406,10 +433,11 @@ HTTP 상태 코드와 관계없이 응답 body의 `success`와 `errorCode`를 �
 - `settledAt`, `comment` -> `settlements`
 - `passwordHash`/`password_hash` -> 외부 API 응답·로그에서 제외
 - Object Storage의 실제 공개 URL이나 비공개 접근 URL은 파일 접근 정책에 맞춰 서버가 발급한다. `object_key`를 무단으로 공개하지 않는다.
+- access token은 학습 목적상 만료 시간을 두지 않으며, token의 `jti`를 애플리케이션 메모리의 폐기 목록에 저장하는 로그아웃 방식으로 폐기한다. 서버는 단일 worker로 실행한다.
 
 ## 10. 하네스 검증 조건
 
-- [ ] 전체 15개 endpoint의 HTTP method와 path가 일치한다.
+- [ ] 전체 17개 endpoint의 HTTP method와 path가 일치한다.
 - [ ] 공통 응답이 성공 시 `success`, `message`, `data`, 실패 시 `errorCode`를 사용한다.
 - [ ] USER와 ADMIN 권한 검사가 서버에서 수행된다.
 - [ ] USER 목록 조회가 본인 `submitter_id`로 제한된다.

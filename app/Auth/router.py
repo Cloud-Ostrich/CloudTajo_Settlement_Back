@@ -1,11 +1,11 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.Auth.repository import user_repository
 from app.Auth.schemas import LoginRequest
-from app.Auth.security import issue_access_token, verify_password
+from app.Auth.security import decode_access_token, issue_access_token, revoke_jti, verify_password
 from app.common.database import get_db
 from app.common.errors import raise_api_error
 from app.common.models import User
@@ -51,3 +51,16 @@ def login(
             "user": public_user(user),
         },
     }
+
+
+@router.post("/logout", summary="로그아웃", description="현재 access token을 서버에서 폐기합니다.")
+def logout(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        raise_api_error("로그인이 필요합니다.", "AUTH_REQUIRED")
+    payload = decode_access_token(authorization[7:].strip())
+    jti = payload.get("jti") if payload else None
+    if not isinstance(jti, str):
+        raise_api_error("유효하지 않은 인증 토큰입니다.", "AUTH_REQUIRED")
+    revoke_jti(jti)
+    return {"success": True, "message": "로그아웃에 성공했습니다.", "data": None}

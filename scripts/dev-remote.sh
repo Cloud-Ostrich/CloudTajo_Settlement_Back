@@ -49,4 +49,5 @@ fi
 
 DB_HOST=127.0.0.1 \
 DB_PORT="$LOCAL_DB_PORT" \
-./.venv/bin/uvicorn app.main:app --reload
+# 메모리 기반 token 폐기 목록을 사용하므로 단일 프로세스로 실행한다.
+./.venv/bin/uvicorn app.main:app

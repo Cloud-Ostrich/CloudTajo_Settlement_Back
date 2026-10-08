@@ -1,8 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.Cat.repository import category_repository
+from app.common.database import get_db
 
 
 router = APIRouter(prefix="/api/categories", tags=["카테고리"])
@@ -17,14 +19,14 @@ router = APIRouter(prefix="/api/categories", tags=["카테고리"])
     ),
     response_description="활성 카테고리 목록",
 )
-def list_active_categories() -> dict[str, Any]:
+def list_active_categories(db: Session = Depends(get_db)) -> dict[str, Any]:
     categories = [
         {
             "id": category.id,
             "name": category.name,
             "description": category.description,
         }
-        for category in category_repository.find_active()
+        for category in category_repository.find_active(db)
     ]
     return {
         "success": True,

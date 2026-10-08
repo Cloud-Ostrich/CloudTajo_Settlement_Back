@@ -1,13 +1,74 @@
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app.main import app, items
+from app.Auth.security import hash_password
+from app.common.database import Base, get_db
+from app.common.models import Category, User
 
 
+test_engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
+Base.metadata.create_all(test_engine)
+
+
+def override_get_db():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
 def setup_function() -> None:
     items.clear()
+    with TestingSessionLocal.begin() as db:
+        db.execute(delete(User))
+        db.execute(delete(Category))
+        db.add_all(
+            [
+                User(
+                    id=1,
+                    name="홍길동",
+                    email="member@example.com",
+                    password_hash=hash_password("password1234"),
+                    role="USER",
+                ),
+                User(
+                    id=2,
+                    name="관리자",
+                    email="admin@example.com",
+                    password_hash=hash_password("password1234"),
+                    role="ADMIN",
+                ),
+                User(
+                    id=3,
+                    name="테스트 사용자",
+                    email="test@example.com",
+                    password_hash=hash_password("test1234!"),
+                    role="USER",
+                ),
+            ]
+        )
+        db.add_all(
+            [
+                Category(id=1, name="식비", description="식사 관련 지출", active=True),
+                Category(id=2, name="교통비", description="교통 관련 지출", active=True),
+                Category(id=3, name="인쇄비", description="인쇄 관련 지출", active=True),
+                Category(id=4, name="소모품비", description="소모품 관련 지출", active=True),
+                Category(id=5, name="기타", description="그 외 지출", active=True),
+            ]
+        )
 
 
 def test_health_check() -> None:

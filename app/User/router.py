@@ -2,9 +2,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from app.Auth.repository import UserRecord
 from app.User.dependencies import get_current_user
 from app.User.schemas import UserResponse
+from app.common.models import User
 
 
 router = APIRouter(prefix="/api/users", tags=["사용자"])
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/users", tags=["사용자"])
     ),
     response_description="현재 로그인한 사용자의 식별 정보와 역할",
 )
-def get_me(current_user: UserRecord = Depends(get_current_user)) -> dict[str, Any]:
+def get_me(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     user = UserResponse(
         id=current_user.id,
         name=current_user.name,

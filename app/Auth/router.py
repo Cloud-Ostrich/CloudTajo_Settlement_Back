@@ -1,17 +1,20 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-from app.Auth.repository import UserRecord, user_repository
+from app.Auth.repository import user_repository
 from app.Auth.schemas import LoginRequest
 from app.Auth.security import issue_access_token, verify_password
+from app.common.database import get_db
 from app.common.errors import raise_api_error
+from app.common.models import User
 
 
 router = APIRouter(prefix="/api/auth", tags=["인증"])
 
 
-def public_user(user: UserRecord) -> dict[str, Any]:
+def public_user(user: User) -> dict[str, Any]:
     return {
         "id": user.id,
         "name": user.name,
@@ -29,11 +32,12 @@ def public_user(user: UserRecord) -> dict[str, Any]:
     ),
     response_description="발급된 access token과 사용자 식별·권한 정보",
 )
-def login(payload: LoginRequest) -> dict[str, Any]:
-    user = user_repository.find_by_email(payload.email)
-    if user is None or not verify_password(
-        payload.password, user.password_salt, user.password_hash
-    ):
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    user = user_repository.find_by_email(db, payload.email)
+    if user is None or not verify_password(payload.password, user.password_hash):
         raise_api_error(
             "이메일 또는 비밀번호가 올바르지 않습니다.",
             "AUTH_REQUIRED",

@@ -69,9 +69,24 @@ python -c 'from app.common.database import check_database_connection; check_data
 
 DB 연결이 되지 않으면 Cloud DB의 접근 제어, VPC·Subnet 경로, 포트 `3306`, 계정 권한을 확인해야 합니다.
 
-## 임시 로그인 테스트 계정
+## 실제 DB 기반 API 테스트
 
-회원가입 API가 구현되기 전까지 로그인 테스트에 사용할 수 있는 개발용 계정입니다.
+`AUTH-001`, `USER-001`, `CAT-001`은 `users`, `categories` 테이블을 조회합니다. 원격 DB에 개발용 계정과 기본 카테고리를 한 번 입력하려면 다음 명령을 실행합니다.
+
+API 서버에서 직접 실행:
+
+```bash
+python scripts/seed_test_data.py
+```
+
+로컬 SSH 터널을 통해 실행:
+
+```bash
+DB_HOST=127.0.0.1 DB_PORT=13306 \
+./.venv/bin/python scripts/seed_test_data.py
+```
+
+시드 계정:
 
 ```text
 이메일: test@example.com
@@ -79,4 +94,4 @@ DB 연결이 되지 않으면 Cloud DB의 접근 제어, VPC·Subnet 경로, 포
 역할: USER
 ```
 
-이 계정은 현재 인메모리 저장소에만 존재하며, 실제 `users` 테이블 연결 후에는 DB 시드 데이터로 이전해야 합니다.
+시드 후 `./scripts/dev-remote.sh`로 로컬 API를 실행하고 Swagger에서 로그인하면 실제 DB의 사용자·카테고리 데이터를 사용합니다.

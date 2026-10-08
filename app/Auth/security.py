@@ -8,25 +8,46 @@ import secrets
 import time
 from typing import Any
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 TOKEN_SECRET = os.getenv("AUTH_TOKEN_SECRET", "local-development-only-secret").encode()
 PASSWORD_ITERATIONS = 310_000
 
 
-def hash_password(password: str, salt: bytes | None = None) -> tuple[bytes, bytes]:
-    password_salt = salt or secrets.token_bytes(16)
+def hash_password(password: str) -> str:
+    password_salt = secrets.token_bytes(16)
     password_hash = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
         password_salt,
         PASSWORD_ITERATIONS,
     )
-    return password_salt, password_hash
+    encoded_salt = base64.urlsafe_b64encode(password_salt).decode()
+    encoded_hash = base64.urlsafe_b64encode(password_hash).decode()
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${encoded_salt}${encoded_hash}"
 
 
-def verify_password(password: str, salt: bytes, expected_hash: bytes) -> bool:
-    _, password_hash = hash_password(password, salt)
-    return hmac.compare_digest(password_hash, expected_hash)
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, encoded_salt, encoded_expected_hash = (
+            stored_hash.split("$", maxsplit=3)
+        )
+        if algorithm != "pbkdf2_sha256":
+            return False
+        salt = base64.urlsafe_b64decode(encoded_salt)
+        expected_hash = base64.urlsafe_b64decode(encoded_expected_hash)
+        password_hash = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            int(iterations_text),
+        )
+        return hmac.compare_digest(password_hash, expected_hash)
+    except (ValueError, TypeError, binascii.Error):
+        return False
 
 
 def issue_access_token(user_id: int, role: str) -> str:

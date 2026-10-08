@@ -8,11 +8,11 @@ class LoginRequest(BaseModel):
         min_length=1,
         max_length=320,
         description="로그인에 사용하는 이메일 주소",
-        examples=["test@example.com"],
+        examples=["admin@test.com"],
     )
     password: str = Field(
         min_length=1,
         max_length=128,
         description="로그인 비밀번호",
-        examples=["test1234!"],
+        examples=["1234"],
     )

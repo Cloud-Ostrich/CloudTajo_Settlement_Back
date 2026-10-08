@@ -174,7 +174,11 @@ def edit_ocr(receipt_id: int, payload: OcrEditRequest, current_user: User = Depe
     receipt = _find_receipt(db, receipt_id)
     if receipt.status in {"APPROVED", "SETTLED"}:
         raise_api_error("승인 또는 정산 완료된 영수증은 수정할 수 없습니다.", "INVALID_STATUS_TRANSITION", 409)
-    before = {"merchantName": receipt.merchant_name, "paidAt": receipt.paid_at, "amount": receipt.amount}
+    before = {
+        "merchantName": receipt.merchant_name,
+        "paidAt": receipt.paid_at.isoformat() if receipt.paid_at else None,
+        "amount": int(receipt.amount) if receipt.amount is not None else None,
+    }
     receipt.merchant_name, receipt.paid_at, receipt.amount = payload.merchantName, payload.paidAt, payload.amount
     _history(db, receipt.id, current_user.id, "EDIT_OCR", reason=payload.reason, snapshot={"before": before, "after": payload.model_dump(mode="json")})
     if receipt.status == "SUBMITTED":
@@ -201,7 +205,7 @@ def _change_review_status(receipt_id: int, new_status: str, user: User, db: Sess
         raise_api_error("검토 중인 영수증만 처리할 수 있습니다.", "INVALID_STATUS_TRANSITION", 409)
     old = receipt.status
     receipt.status = new_status
-    receipt.reviewed_at = datetime.utcnow()
+    receipt.reviewed_at = datetime.now()
     _history(db, receipt.id, user.id, action, from_status=old, to_status=new_status, reason=reason)
     db.commit()
     return {"success": True, "message": "영수증 상태를 변경했습니다.", "data": {"receiptId": receipt.id, "status": receipt.status}}

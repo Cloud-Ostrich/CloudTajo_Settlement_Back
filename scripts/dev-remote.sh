@@ -47,7 +47,7 @@ if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
     exit 1
 fi
 
+# 메모리 기반 token 폐기 목록을 사용하므로 단일 프로세스로 실행한다.
 DB_HOST=127.0.0.1 \
 DB_PORT="$LOCAL_DB_PORT" \
-# 메모리 기반 token 폐기 목록을 사용하므로 단일 프로세스로 실행한다.
 ./.venv/bin/uvicorn app.main:app

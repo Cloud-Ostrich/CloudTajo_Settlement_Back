@@ -71,7 +71,7 @@ def process_ocr_job(ocr_result_id: int, session_factory) -> None:
             if receipt is not None and receipt.status == "SUBMITTED":
                 old_status = receipt.status
                 receipt.status = "REVIEWING"
-                receipt.updated_at = datetime.utcnow()
+                receipt.updated_at = datetime.now()
                 db.add(ReceiptHistory(receipt_id=receipt.id, actor_id=None, action="REVIEW", from_status=old_status, to_status=receipt.status))
             db.add(ReceiptHistory(receipt_id=result.receipt_id, actor_id=None, action="OCR_DONE", snapshot={"ocrResultId": result.id, "status": result.status}))
             db.commit()
@@ -90,7 +90,7 @@ def process_ocr_job(ocr_result_id: int, session_factory) -> None:
             )
         )
         if receipt is not None and receipt.status == "SUBMITTED":
-            receipt.updated_at = datetime.utcnow()
+            receipt.updated_at = datetime.now()
         db.commit()
     finally:
         db.close()

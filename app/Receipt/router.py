@@ -203,10 +203,49 @@ def _change_review_status(receipt_id: int, new_status: str, user: User, db: Sess
     receipt = _find_receipt(db, receipt_id)
     if receipt.status != "REVIEWING":
         raise_api_error("검토 중인 영수증만 처리할 수 있습니다.", "INVALID_STATUS_TRANSITION", 409)
+
+    auto_confirmed: dict[str, Any] = {}
+    if new_status == "APPROVED":
+        ocr = db.scalar(
+            select(OcrResult)
+            .where(OcrResult.receipt_id == receipt.id, OcrResult.selected.is_(True))
+            .order_by(OcrResult.id.desc())
+        )
+        if ocr is None:
+            ocr = db.scalar(
+                select(OcrResult)
+                .where(OcrResult.receipt_id == receipt.id)
+                .order_by(OcrResult.id.desc())
+            )
+        if ocr is not None:
+            auto_confirmed = {"ocrResultId": ocr.id, "fields": {}}
+            candidates = {
+                "merchantName": ("merchant_name", ocr.merchant_name_raw),
+                "paidAt": ("paid_at", ocr.paid_at_raw),
+                "amount": ("amount", ocr.amount_raw),
+            }
+            for field_name, (receipt_field, raw_value) in candidates.items():
+                if getattr(receipt, receipt_field) is None and raw_value is not None:
+                    setattr(receipt, receipt_field, raw_value)
+                    auto_confirmed["fields"][field_name] = (
+                        raw_value.isoformat() if isinstance(raw_value, date) else int(raw_value)
+                        if field_name == "amount"
+                        else raw_value
+                    )
+
     old = receipt.status
     receipt.status = new_status
     receipt.reviewed_at = datetime.now()
-    _history(db, receipt.id, user.id, action, from_status=old, to_status=new_status, reason=reason)
+    _history(
+        db,
+        receipt.id,
+        user.id,
+        action,
+        from_status=old,
+        to_status=new_status,
+        reason=reason,
+        snapshot={"autoConfirmedFromOcr": auto_confirmed} if auto_confirmed else None,
+    )
     db.commit()
     return {"success": True, "message": "영수증 상태를 변경했습니다.", "data": {"receiptId": receipt.id, "status": receipt.status}}
 

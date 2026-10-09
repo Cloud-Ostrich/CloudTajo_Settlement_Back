@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from datetime import date, datetime
 from urllib import error, request
@@ -48,6 +49,99 @@ def _raw_text(payload: dict) -> str:
     return " ".join(str(field.get("inferText", "")) for field in fields).strip()
 
 
+def _recognized_value(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    formatted = value.get("formatted")
+    if isinstance(formatted, dict) and formatted.get("value") is not None:
+        return str(formatted["value"]).strip() or None
+    text = value.get("text")
+    return str(text).strip() if text is not None and str(text).strip() else None
+
+
+def _recognized_date(value: object) -> date | None:
+    if not isinstance(value, dict):
+        return None
+    formatted = value.get("formatted")
+    if isinstance(formatted, dict):
+        try:
+            return date(
+                int(formatted["year"]),
+                int(formatted["month"]),
+                int(formatted["day"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            pass
+    text = _recognized_value(value)
+    if text is None:
+        return None
+    match = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})", text)
+    if match is None:
+        return None
+    try:
+        return date(*(int(part) for part in match.groups()))
+    except ValueError:
+        return None
+
+
+def _recognized_amount(value: object) -> int | None:
+    text = _recognized_value(value)
+    if text is None:
+        return None
+    digits = re.sub(r"[^0-9]", "", text)
+    return int(digits) if digits else None
+
+
+def _parse_general_receipt_fields(raw_text: str) -> dict[str, object | None]:
+    merchant_match = re.search(
+        r"가맹점명\s*[:：]?\s*(.+?)(?=\s+(?:대표자명|사업자\s*번호|전화번호|주\s*소|주소)\s*[:：]?|$)",
+        raw_text,
+    )
+    merchant_name = merchant_match.group(1).strip() if merchant_match else None
+
+    date_match = re.search(r"거래일시\s*[:：]?\s*(\d{2,4})[-./](\d{1,2})[-./](\d{1,2})", raw_text)
+    if date_match is None:
+        date_match = re.search(r"승인일시\s*[:：]?\s*(\d{4})(\d{2})(\d{2})", raw_text)
+    paid_at = None
+    if date_match:
+        year, month, day = (int(part) for part in date_match.groups())
+        if year < 100:
+            year += 2000
+        try:
+            paid_at = date(year, month, day)
+        except ValueError:
+            paid_at = None
+
+    amount_match = re.search(
+        r"(?:승인금액|합계금액|결제금액|총액)\s*\]?\s*[:：]?\s*([\d,]+)",
+        raw_text,
+    )
+    amount = int(amount_match.group(1).replace(",", "")) if amount_match else None
+    return {"merchantName": merchant_name, "paidAt": paid_at, "amount": amount}
+
+
+def parse_receipt_fields(payload: dict) -> dict[str, object | None]:
+    """Extract receipt candidates without writing them to confirmed receipt fields."""
+    image = payload.get("images", [{}])[0]
+    result = image.get("receipt", {}).get("result", {})
+    if not isinstance(result, dict):
+        return _parse_general_receipt_fields(_raw_text(payload))
+
+    store_info = result.get("storeInfo", {})
+    payment_info = result.get("paymentInfo", {})
+    total_price = result.get("totalPrice", {})
+    merchant_name = _recognized_value(store_info.get("name")) if isinstance(store_info, dict) else None
+    paid_at = _recognized_date(payment_info.get("date")) if isinstance(payment_info, dict) else None
+    amount = None
+    if isinstance(total_price, dict):
+        amount = _recognized_amount(total_price.get("creditCardPrice"))
+        if amount is None:
+            amount = _recognized_amount(total_price.get("price"))
+    parsed = {"merchantName": merchant_name, "paidAt": paid_at, "amount": amount}
+    fallback = _parse_general_receipt_fields(_raw_text(payload))
+    return {key: value if value is not None else fallback[key] for key, value in parsed.items()}
+
+
 def process_ocr_job(ocr_result_id: int, session_factory) -> None:
     """OCR provider 연결 지점.
 
@@ -66,7 +160,19 @@ def process_ocr_job(ocr_result_id: int, session_factory) -> None:
             result.status = "OCR_DONE"
             result.raw_payload = payload
             result.raw_text = _raw_text(payload)
-            result.parsed_payload = {"source": "CLOVA_OCR", "parserVersion": "raw-only-v1"}
+            parsed = parse_receipt_fields(payload)
+            result.merchant_name_raw = parsed["merchantName"]
+            result.paid_at_raw = parsed["paidAt"]
+            result.amount_raw = parsed["amount"]
+            result.parsed_payload = {
+                "source": "CLOVA_OCR",
+                "parserVersion": "receipt-v1",
+                "fields": {
+                    "merchantName": parsed["merchantName"],
+                    "paidAt": parsed["paidAt"].isoformat() if parsed["paidAt"] else None,
+                    "amount": parsed["amount"],
+                },
+            }
             receipt = db.get(Receipt, result.receipt_id)
             if receipt is not None and receipt.status == "SUBMITTED":
                 old_status = receipt.status

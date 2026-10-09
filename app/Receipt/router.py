@@ -378,5 +378,16 @@ def dashboard_summary(month: str, current_user: User = Depends(require_admin), d
         if reviewed
         else 0
     )
-    data = {"month": month, "totalAmount": sum(int(row.amount) for row in paid_rows), "categorySummaries": list(category_summaries.values()), "pendingCount": sum(row.status in {"SUBMITTED", "REVIEWING"} for row in rows), "rejectedCount": sum(row.status == "REJECTED" for row in rows), "averageReviewMinutes": average_review}
+    approved_rows = [row for row in rows if row.status == "APPROVED" and row.amount is not None]
+    settled_rows = [row for row in rows if row.status == "SETTLED"]
+    data = {
+        "month": month,
+        "totalAmount": sum(int(row.amount) for row in paid_rows),
+        "approvedAmount": sum(int(row.amount) for row in approved_rows),
+        "settledCount": len(settled_rows),
+        "categorySummaries": list(category_summaries.values()),
+        "pendingCount": sum(row.status in {"SUBMITTED", "REVIEWING"} for row in rows),
+        "rejectedCount": sum(row.status == "REJECTED" for row in rows),
+        "averageReviewMinutes": average_review,
+    }
     return {"success": True, "message": "대시보드 요약 조회에 성공했습니다.", "data": data}

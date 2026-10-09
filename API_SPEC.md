@@ -391,6 +391,8 @@ Request body:
 {
   "month": "2026-10",
   "totalAmount": 189000,
+  "approvedAmount": 120000,
+  "settledCount": 4,
   "categorySummaries": [
     { "categoryId": 1, "categoryName": "식비", "amount": 120000, "count": 8 }
   ],
@@ -403,6 +405,8 @@ Request body:
 집계 기준:
 
 - 총 지출 금액: `receipts.status IN ('APPROVED', 'SETTLED')`인 `amount` 합계.
+- 승인 금액: `receipts.status = 'APPROVED'`인 `amount` 합계.
+- 정산 완료 건수: `receipts.status = 'SETTLED'`인 영수증 건수.
 - 카테고리별 지출: `category_id`별 금액 합계와 건수.
 - 미처리 건: `receipts.status IN ('SUBMITTED', 'REVIEWING')` 상태 건수. OCR 대기·실패 건은 `ocr_results.status`를 별도로 집계한다.
 - 반려 건: `REJECTED` 상태 건수 및 `receipt_histories.reason` 분석.

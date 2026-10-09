@@ -1,9 +1,12 @@
+import logging
 import os
 from datetime import datetime
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class StorageError(RuntimeError):
@@ -37,6 +40,16 @@ class ObjectStorage:
                 Bucket=self.bucket, Key=object_key, Body=content, ContentType=content_type
             )
         except Exception as error:
+            logger.exception(
+                "Object Storage upload failed: bucket=%s endpoint=%s region=%s key=%s "
+                "content_type=%s error_type=%s",
+                self.bucket,
+                self.endpoint,
+                self.region,
+                object_key,
+                content_type,
+                type(error).__name__,
+            )
             raise StorageError("Object Storage 파일 저장에 실패했습니다.") from error
 
     def delete(self, object_key: str) -> None:

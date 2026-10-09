@@ -14,6 +14,7 @@ from app.common.errors import raise_api_error
 from app.common.models import (
     Category, DuplicateCandidate, OcrResult, Receipt, ReceiptFile, ReceiptHistory, Settlement, User,
 )
+from app.common.time import utc_now
 
 router = APIRouter(prefix="/api", tags=["영수증"])
 storage = ObjectStorage()
@@ -108,7 +109,15 @@ async def create_receipt(
     if not image.content_type or not image.content_type.startswith("image/"):
         raise_api_error("이미지 파일만 업로드할 수 있습니다.", "FILE_UPLOAD_FAILED", 400)
     content = await image.read()
-    receipt = Receipt(submitter_id=current_user.id, category_id=categoryId, purpose=purpose, memo=memo)
+    now = utc_now()
+    receipt = Receipt(
+        submitter_id=current_user.id,
+        category_id=categoryId,
+        purpose=purpose,
+        memo=memo,
+        submitted_at=now,
+        updated_at=now,
+    )
     db.add(receipt)
     db.flush()
     object_key = receipt_object_key(receipt.id, image.filename or "receipt.bin")
@@ -235,7 +244,7 @@ def _change_review_status(receipt_id: int, new_status: str, user: User, db: Sess
 
     old = receipt.status
     receipt.status = new_status
-    receipt.reviewed_at = datetime.now()
+    receipt.reviewed_at = utc_now()
     _history(
         db,
         receipt.id,
@@ -357,7 +366,17 @@ def dashboard_summary(month: str, current_user: User = Depends(require_admin), d
         item = category_summaries.setdefault(row.category_id, {"categoryId": row.category_id, "categoryName": categories.get(row.category_id), "amount": 0, "count": 0})
         item["amount"] += int(row.amount)
         item["count"] += 1
-    reviewed = [row for row in rows if row.reviewed_at is not None]
-    average_review = (sum((row.reviewed_at - row.submitted_at).total_seconds() / 60 for row in reviewed) / len(reviewed)) if reviewed else 0
+    reviewed = [
+        row
+        for row in rows
+        if row.submitted_at is not None
+        and row.reviewed_at is not None
+        and row.reviewed_at >= row.submitted_at
+    ]
+    average_review = (
+        sum((row.reviewed_at - row.submitted_at).total_seconds() / 60 for row in reviewed) / len(reviewed)
+        if reviewed
+        else 0
+    )
     data = {"month": month, "totalAmount": sum(int(row.amount) for row in paid_rows), "categorySummaries": list(category_summaries.values()), "pendingCount": sum(row.status in {"SUBMITTED", "REVIEWING"} for row in rows), "rejectedCount": sum(row.status == "REJECTED" for row in rows), "averageReviewMinutes": average_review}
     return {"success": True, "message": "대시보드 요약 조회에 성공했습니다.", "data": data}

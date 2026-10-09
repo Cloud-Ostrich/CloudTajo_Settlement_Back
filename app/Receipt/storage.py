@@ -4,6 +4,8 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from app.common.time import utc_now
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -91,6 +93,6 @@ class ObjectStorage:
 
 
 def receipt_object_key(receipt_id: int, filename: str, now: datetime | None = None) -> str:
-    current = now or datetime.utcnow()
+    current = now or utc_now()
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
     return f"receipts/{current.year}/{current.month:02d}/{receipt_id}.{extension}"

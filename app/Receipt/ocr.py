@@ -2,13 +2,14 @@ import json
 import os
 import re
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from urllib import error, request
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.common.models import OcrResult, Receipt, ReceiptFile, ReceiptHistory
+from app.common.time import utc_now
 from app.Receipt.storage import ObjectStorage, StorageError
 
 
@@ -22,7 +23,7 @@ def call_clova_ocr(content: bytes, filename: str, content_type: str) -> dict:
     if not url or not secret:
         raise OcrProviderError("CLOVA OCR 설정이 없습니다.")
     boundary = f"----CloudTajo{uuid.uuid4().hex}"
-    message = json.dumps({"version": "V2", "requestId": str(uuid.uuid4()), "timestamp": int(datetime.now().timestamp() * 1000), "images": [{"format": filename.rsplit(".", 1)[-1].lower(), "name": filename}]})
+    message = json.dumps({"version": "V2", "requestId": str(uuid.uuid4()), "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000), "images": [{"format": filename.rsplit(".", 1)[-1].lower(), "name": filename}]})
     body = b"".join(
         [
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"message\"\r\n\r\n{message}\r\n".encode(),
@@ -177,7 +178,7 @@ def process_ocr_job(ocr_result_id: int, session_factory) -> None:
             if receipt is not None and receipt.status == "SUBMITTED":
                 old_status = receipt.status
                 receipt.status = "REVIEWING"
-                receipt.updated_at = datetime.now()
+                receipt.updated_at = utc_now()
                 db.add(ReceiptHistory(receipt_id=receipt.id, actor_id=None, action="REVIEW", from_status=old_status, to_status=receipt.status))
             db.add(ReceiptHistory(receipt_id=result.receipt_id, actor_id=None, action="OCR_DONE", snapshot={"ocrResultId": result.id, "status": result.status}))
             db.commit()
@@ -196,7 +197,7 @@ def process_ocr_job(ocr_result_id: int, session_factory) -> None:
             )
         )
         if receipt is not None and receipt.status == "SUBMITTED":
-            receipt.updated_at = datetime.now()
+            receipt.updated_at = utc_now()
         db.commit()
     finally:
         db.close()

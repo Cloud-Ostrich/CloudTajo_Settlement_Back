@@ -24,6 +24,7 @@ class ObjectStorage:
             raise StorageError("Object Storage 설정이 없습니다.")
         try:
             import boto3
+            from botocore.config import Config
         except ImportError as error:
             raise StorageError("boto3 의존성이 설치되지 않았습니다.") from error
         return boto3.client(
@@ -32,6 +33,12 @@ class ObjectStorage:
             region_name=self.region,
             aws_access_key_id=os.getenv("NCP_ACCESS_KEY"),
             aws_secret_access_key=os.getenv("NCP_SECRET_KEY"),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
         )
 
     def put(self, object_key: str, content: bytes, content_type: str) -> None:
@@ -71,6 +78,15 @@ class ObjectStorage:
                 "get_object", Params={"Bucket": self.bucket, "Key": object_key}, ExpiresIn=expires
             )
         except Exception as error:
+            logger.exception(
+                "Object Storage presigned URL failed: bucket=%s endpoint=%s region=%s key=%s "
+                "error_type=%s",
+                self.bucket,
+                self.endpoint,
+                self.region,
+                object_key,
+                type(error).__name__,
+            )
             raise StorageError("Object Storage 접근 URL 발급에 실패했습니다.") from error
 
 

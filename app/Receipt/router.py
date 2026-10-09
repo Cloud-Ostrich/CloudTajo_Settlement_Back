@@ -44,8 +44,8 @@ def _receipt_data(receipt: Receipt, file: ReceiptFile | None, ocr: OcrResult | N
     if file is not None:
         try:
             file_url = storage.presigned_get_url(file.object_key)
-        except StorageError:
-            file_url = None
+        except StorageError as error:
+            raise_api_error(str(error), "FILE_ACCESS_FAILED", 502)
         file_data = {
             "id": file.id,
             "originalFilename": file.original_filename,

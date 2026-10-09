@@ -199,6 +199,8 @@ Content-Type: `multipart/form-data`
 ```json
 {
   "id": 1,
+  "submitterId": 10,
+  "submitterName": "홍길동",
   "purpose": "팀 회의 식비",
   "categoryId": 1,
   "categoryName": "식비",
@@ -220,6 +222,7 @@ Content-Type: `multipart/form-data`
 {
   "id": 1,
   "submitterId": 10,
+  "submitterName": "홍길동",
   "categoryId": 1,
   "purpose": "팀 회의 식비",
   "status": "REVIEWING",

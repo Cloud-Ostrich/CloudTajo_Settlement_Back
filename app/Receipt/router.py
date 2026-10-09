@@ -40,7 +40,7 @@ class SettleRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=1000)
 
 
-def _receipt_data(receipt: Receipt, file: ReceiptFile | None, ocr: OcrResult | None) -> dict[str, Any]:
+def _receipt_data(receipt: Receipt, file: ReceiptFile | None, ocr: OcrResult | None, submitter_name: str | None = None) -> dict[str, Any]:
     file_data = None
     if file is not None:
         try:
@@ -69,6 +69,7 @@ def _receipt_data(receipt: Receipt, file: ReceiptFile | None, ocr: OcrResult | N
     return {
         "id": receipt.id,
         "submitterId": receipt.submitter_id,
+        "submitterName": submitter_name,
         "categoryId": receipt.category_id,
         "purpose": receipt.purpose,
         "status": receipt.status,
@@ -148,7 +149,7 @@ def list_my_receipts(status_filter: str | None = Query(default=None, alias="stat
         count_query = count_query.where(Receipt.status == status_filter)
     total = db.scalar(count_query) or 0
     rows = list(db.scalars(query.order_by(Receipt.id.desc()).offset(page * size).limit(size)).all())
-    items = [{"id": r.id, "purpose": r.purpose, "categoryId": r.category_id, "status": r.status, "merchantName": r.merchant_name, "paidAt": r.paid_at, "amount": int(r.amount) if r.amount is not None else None, "submittedAt": r.submitted_at} for r in rows]
+    items = [{"id": r.id, "submitterId": r.submitter_id, "submitterName": current_user.name, "purpose": r.purpose, "categoryId": r.category_id, "status": r.status, "merchantName": r.merchant_name, "paidAt": r.paid_at, "amount": int(r.amount) if r.amount is not None else None, "submittedAt": r.submitted_at} for r in rows]
     return {"success": True, "message": "내 영수증 목록 조회에 성공했습니다.", "data": {"items": items, "page": page, "size": size, "totalElements": total, "totalPages": (total + size - 1) // size}}
 
 
@@ -161,7 +162,8 @@ def get_receipt(receipt_id: int, current_user: User = Depends(get_current_user),
     ocr = db.scalar(select(OcrResult).where(OcrResult.receipt_id == receipt.id, OcrResult.selected.is_(True)).order_by(OcrResult.id.desc()))
     if ocr is None:
         ocr = db.scalar(select(OcrResult).where(OcrResult.receipt_id == receipt.id).order_by(OcrResult.id.desc()))
-    return {"success": True, "message": "영수증 상세 조회에 성공했습니다.", "data": _receipt_data(receipt, file, ocr)}
+    submitter = current_user if receipt.submitter_id == current_user.id else db.get(User, receipt.submitter_id)
+    return {"success": True, "message": "영수증 상세 조회에 성공했습니다.", "data": _receipt_data(receipt, file, ocr, submitter.name if submitter else None)}
 
 
 @router.post("/receipts/{receipt_id}/ocr/retry", summary="OCR 재요청")
@@ -291,7 +293,12 @@ def list_admin_receipts(status_filter: str | None = Query(default=None, alias="s
         count_query = count_query.where(*filters)
     total = db.scalar(count_query) or 0
     rows = list(db.scalars(query.order_by(Receipt.id.desc()).offset(page * size).limit(size)).all())
-    items = [{"id": r.id, "submitterId": r.submitter_id, "categoryId": r.category_id, "purpose": r.purpose, "status": r.status, "merchantName": r.merchant_name, "paidAt": r.paid_at, "amount": int(r.amount) if r.amount is not None else None, "submittedAt": r.submitted_at} for r in rows]
+    submitter_ids = {row.submitter_id for row in rows}
+    submitters = {
+        user.id: user.name
+        for user in db.scalars(select(User).where(User.id.in_(submitter_ids))).all()
+    } if submitter_ids else {}
+    items = [{"id": r.id, "submitterId": r.submitter_id, "submitterName": submitters.get(r.submitter_id), "categoryId": r.category_id, "purpose": r.purpose, "status": r.status, "merchantName": r.merchant_name, "paidAt": r.paid_at, "amount": int(r.amount) if r.amount is not None else None, "submittedAt": r.submitted_at} for r in rows]
     return {"success": True, "message": "관리자 영수증 목록 조회에 성공했습니다.", "data": {"items": items, "page": page, "size": size, "totalElements": total, "totalPages": (total + size - 1) // size}}
 
 

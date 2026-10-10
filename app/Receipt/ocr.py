@@ -94,30 +94,47 @@ def _recognized_amount(value: object) -> int | None:
 
 
 def _parse_general_receipt_fields(raw_text: str) -> dict[str, object | None]:
+    def _date_from_match(match: re.Match[str] | None) -> date | None:
+        if match is None:
+            return None
+        year, month, day = (int(part) for part in match.groups())
+        if year < 100:
+            year += 2000
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
+
     merchant_match = re.search(
-        r"가맹점명\s*[:：]?\s*(.+?)(?=\s+(?:대표자명|사업자\s*번호|전화번호|주\s*소|주소)\s*[:：]?|$)",
+        r"(?:가맹점명|상호|주문매장|매장)\s*[:：]?\s*(.+?)"
+        r"(?=\s+(?:대표자명|대표|사업자\s*번호|사업자등록번호|전화번호|대표번호|"
+        r"주\s*소|주소|주문시간|주문일시|판매시간|결제일시|승인일시|"
+        r"승인금액|합계금액|결제금액|총\s*결제\s*금액|총액|합\s*계|$))",
         raw_text,
     )
     merchant_name = merchant_match.group(1).strip() if merchant_match else None
 
-    date_match = re.search(r"거래일시\s*[:：]?\s*(\d{2,4})[-./](\d{1,2})[-./](\d{1,2})", raw_text)
-    if date_match is None:
-        date_match = re.search(r"승인일시\s*[:：]?\s*(\d{4})(\d{2})(\d{2})", raw_text)
+    date_pattern = r"(\d{2,4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})"
     paid_at = None
-    if date_match:
-        year, month, day = (int(part) for part in date_match.groups())
-        if year < 100:
-            year += 2000
-        try:
-            paid_at = date(year, month, day)
-        except ValueError:
-            paid_at = None
+    for label in ("거래일시", "승인일시", "주문시간", "주문일시", "판매시간", "결제일시"):
+        date_match = re.search(rf"{label}\s*[:：]?\s*{date_pattern}", raw_text)
+        paid_at = _date_from_match(date_match)
+        if paid_at is not None:
+            break
+    if paid_at is None:
+        compact_date = re.search(r"(?:거래일시|승인일시|주문시간|주문일시|판매시간|결제일시)\s*[:：]?\s*(\d{4})(\d{2})(\d{2})", raw_text)
+        paid_at = _date_from_match(compact_date)
 
     amount_match = re.search(
-        r"(?:승인금액|합계금액|결제금액|총액)\s*\]?\s*[:：]?\s*([\d,]+)",
+        r"(?:승인금액|합계금액|결제금액|총\s*결제\s*금액|총액|합\s*계)"
+        r"\s*\]?\s*[:：]?\s*([\d,]+)",
         raw_text,
     )
-    amount = int(amount_match.group(1).replace(",", "")) if amount_match else None
+    if amount_match is not None:
+        amount = int(amount_match.group(1).replace(",", ""))
+    else:
+        total_match = re.search(r"합계수량\s*/\s*금액\s+\d+\s+[\d,]+\s+([\d,]+)", raw_text)
+        amount = int(total_match.group(1).replace(",", "")) if total_match else None
     return {"merchantName": merchant_name, "paidAt": paid_at, "amount": amount}
 
 

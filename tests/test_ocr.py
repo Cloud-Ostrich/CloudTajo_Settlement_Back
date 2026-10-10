@@ -58,3 +58,57 @@ def test_parse_receipt_fields_from_general_ocr_text() -> None:
         "paidAt": date(2017, 7, 5),
         "amount": 100000,
     }
+
+
+def test_parse_delivery_order_text() -> None:
+    payload = {
+        "images": [{
+            "fields": [
+                {"inferText": "주문매장: 베빗쿠키 ()"},
+                {"inferText": "총결제금액 19,300"},
+                {"inferText": "주문시간: 2026-10-10 12:10:00 PM"},
+            ]
+        }]
+    }
+
+    assert parse_receipt_fields(payload) == {
+        "merchantName": "베빗쿠키 ()",
+        "paidAt": date(2026, 10, 10),
+        "amount": 19300,
+    }
+
+
+def test_parse_pos_receipt_text_with_spaced_total_label() -> None:
+    payload = {
+        "images": [{
+            "fields": [
+                {"inferText": "상호 두부랑놀개 대표 김한솔"},
+                {"inferText": "승인일시 2026-10-10 16:21:49"},
+                {"inferText": "결제금액 19,000"},
+            ]
+        }]
+    }
+
+    assert parse_receipt_fields(payload) == {
+        "merchantName": "두부랑놀개",
+        "paidAt": date(2026, 10, 10),
+        "amount": 19000,
+    }
+
+
+def test_parse_gs_receipt_total_amount() -> None:
+    payload = {
+        "images": [{
+            "fields": [
+                {"inferText": "GS25영통방죽점"},
+                {"inferText": "2026/10/10(토)"},
+                {"inferText": "합계수량/금액 1 2,300 2,300"},
+            ]
+        }]
+    }
+
+    assert parse_receipt_fields(payload) == {
+        "merchantName": None,
+        "paidAt": None,
+        "amount": 2300,
+    }

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.Receipt.duplicate import clear_duplicate_candidates, generate_duplicate_candidates
 from app.Receipt.ocr import process_ocr_job
 from app.Receipt.storage import ObjectStorage, StorageError, receipt_object_key
 from app.User.dependencies import get_current_user, require_admin, require_user
@@ -196,6 +197,7 @@ def edit_ocr(receipt_id: int, payload: OcrEditRequest, current_user: User = Depe
         old = receipt.status
         receipt.status = "REVIEWING"
         _history(db, receipt.id, current_user.id, "REVIEW", from_status=old, to_status=receipt.status)
+    generate_duplicate_candidates(db, receipt.id)
     db.commit()
     return {"success": True, "message": "확정값을 저장했습니다.", "data": {"receiptId": receipt.id, "status": receipt.status}}
 
@@ -243,6 +245,9 @@ def _change_review_status(receipt_id: int, new_status: str, user: User, db: Sess
                         if field_name == "amount"
                         else raw_value
                     )
+        generate_duplicate_candidates(db, receipt.id)
+    else:
+        clear_duplicate_candidates(db, receipt.id)
 
     old = receipt.status
     receipt.status = new_status
@@ -329,6 +334,7 @@ async def resubmit(receipt_id: int, background_tasks: BackgroundTasks, image: Up
             except StorageError:
                 pass
     receipt.purpose, receipt.category_id, receipt.memo, receipt.status = purpose, categoryId, memo, "SUBMITTED"
+    clear_duplicate_candidates(db, receipt.id)
     _history(db, receipt.id, current_user.id, "SUBMIT", from_status="REJECTED", to_status="SUBMITTED")
     ocr = OcrResult(receipt_id=receipt.id, status="OCR_PENDING")
     db.add(ocr)

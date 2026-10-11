@@ -2,7 +2,7 @@ from datetime import datetime
 
 from datetime import date
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, JSON, Numeric, String, Text, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.common.database import Base
@@ -124,6 +124,10 @@ class Settlement(Base):
 
 class DuplicateCandidate(Base):
     __tablename__ = "duplicate_candidates"
+    __table_args__ = (
+        UniqueConstraint("receipt_id", "candidate_receipt_id", name="uq_duplicate_candidate_pair"),
+        CheckConstraint("receipt_id <> candidate_receipt_id", name="ck_duplicate_candidate_not_self"),
+    )
 
     id: Mapped[int] = id_column()
     receipt_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
